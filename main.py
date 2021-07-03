@@ -1,4 +1,5 @@
 ##%%
+import copy
 import pandas as pd
 import numpy as np
 import random
@@ -16,7 +17,8 @@ import time
 from sklearn.neighbors import NearestNeighbors
 from sklearn.neighbors import NearestCentroid
 
-
+# decorators
+# -------------------
 def timer(func):
     def wrapper(*args, **kwargs):
         startTime = time.time()
@@ -26,52 +28,214 @@ def timer(func):
         return ret
     return wrapper
 
-##%%
-def geneticoMultiobjetivo(populacao, TAM_POP, GERACOES, df, Cols):
-    gen_no = 0   # geração número 0
-    neigh = getNeighbors(df)
-    while(gen_no < GERACOES):
-        # function1_values é uma lista com todos os valores de f1 de todos os indivíduos
-        function1_values = [function1(populacao[i], df, Cols) for i in range(TAM_POP)]
-        # function2_values é uma lista com todos os valores de f2  de todos os indivíduos
-        function2_values = [function2(populacao[i], df, Cols, neigh) for i in range(TAM_POP)]
-        non_dominated_sorted_solution = fast_non_dominated_sort(function1_values[:],function2_values[:])
-        # print("Indivíduos na primeira Fronteira na geração",gen_no,":", len(non_dominated_sorted_solution[0]))
-        # print("Índices dos indivíduos da primeira Fronteira: (ind, f1, f2)")
-        # for indiceIndiv in non_dominated_sorted_solution[0]:
-        #     print((indiceIndiv, function1_values[indiceIndiv], function2_values[indiceIndiv])) 
-        # print("\n")
+# Auxiliar Functions
+# --------------------
+
+def getAverageValue(vector):
+    return sum(vector) / len(vector)
+
+
+# classes
+# --------------------
+class indiv:
+
+    maxNumCluster = 0
+    size = 0
+    numProxPoints = 0
+    crossoverCuts = 5
+
+    def __init__(self, data = []):
+        self.resetFitness()
+        if len(data):
+            self.data = data
+        else:
+            self.randomInitialization()
+
+    def resetFitness(self):
+        self.fitness01 = 0
+        self.fitness02 = 0
+
+    def randomInitialization(self):
+        self.data = [random.randint(0,self.maxNumCluster-1) for _ in range(self.size)]
+    
+    def updateAllFitness(self, neighborMatrix, numAttributes:int, df):
+        self.updateFitness01(numAttributes, df)
+        self.updateFitness02(neighborMatrix)
+    
+    def updateFitness01(self, numAttributes:int, df):
+        dfValues = df.values.tolist()
+        centroidList, pointsIdxInCluster = self.getCentroids(numAttributes, df)
+        pointsInCluster = [[dfValues[idxPoint] for idxPoint in pointsIdxInCluster[idxCluster]] for idxCluster in range(self.maxNumCluster)]
+        finalsum = 0
+        for idxCluster in range(self.maxNumCluster):
+            if not pointsInCluster[idxCluster]:
+                continue
+            finalsum += np.linalg.norm(centroidList[idxCluster] - np.array(pointsInCluster[idxCluster])) 
+        self.fitness01 = finalsum
+
+    def updateFitness02(self, neighborMatrix):
+        totalSum = 0
+        for idxData in range(self.size):
+            for idxNearPoint in range(1,self.numProxPoints + 1):
+                if self.data[neighborMatrix[idxData][idxNearPoint]] == self.data[idxNearPoint]:
+                    continue
+                totalSum += 1/float(idxNearPoint+1)
+        self.fitness02 = totalSum
+    
+    def getCentroids(self, numAttributes:int, df):
+        dfValues = df.values.tolist()
+        centroidList = [[0 for _ in range(numAttributes)] for _ in range(self.maxNumCluster)]
+        pointsInCluster = []
+        for idxCluster in range(self.maxNumCluster):
+            pointsIdxInCluster = [i for i, point in enumerate(self.data) if point == idxCluster]
+            pointsInCluster.append(pointsIdxInCluster)
+            for idxAttr in range(numAttributes):
+                centroidList[idxCluster][idxAttr] = getAverageValue([dfValues[pointIdx][idxAttr] for pointIdx in pointsIdxInCluster])
+        return centroidList, pointsInCluster 
+
+    def getCrossover(self, otherIndiv:"indiv"):
+        cuts = [random.randint(0,self.size-1) for _ in range(self.crossoverCuts)]
+        a = [0 for _ in range(self.size)]
+        b = [0 for _ in range(self.size)]
+        invert = 0
+        for i in range(self.size):
+            if i in cuts:
+                invert = not invert
+            if not invert:
+                a[i] = self.data[i]
+                b[i] = otherIndiv.data[i]
+            else:
+                a[i] = otherIndiv.data[i]
+                b[i] = self.data[i]
+
+        return indiv(a), indiv(b)
+
+    def mutate(self, neighborMatrix):
+        if (random.random() < 0.5):
+            self.mutation01()
+        else:
+            self.mutation02(neighborMatrix)
+    
+    def mutation01(self):
+        return
+
+    def mutation02(self, neighborMatrix):
+        randMutationPoint = random.randint(0,self.size-1)
+        for idx in range(self.size):
+            if self.data[randMutationPoint] != self.data[neighborMatrix[randMutationPoint][idx]]:
+                self.data[randMutationPoint] = self.data[neighborMatrix[randMutationPoint][idx]]
+                break
+        self.resetFitness()
+
+class population:
+
+    def __init__(self):
+        self.members = []
+
+    def addMember(self, indiv:indiv):
+        self.members.append(indiv)
+
+    def mergePopulation(self, otherPop:"population"):
+        for indiv in otherPop.members:
+            self.members.append(copy.deepcopy(indiv))
+
+    def getSize(self):
+        return len(self.members) 
+
+    def updateAllFitness(self, neighborMatrix, numAttributes:int, df):
+        for indiv in self.members:
+            indiv.updateAllFitness(neighborMatrix, numAttributes, df)
+
+@timer
+def main(MAX_GEN = 200, TAM_POP = 100, RODADAS = 1):
+
+    df, N, Cols = preparaBD("diabetes.csv") 
+
+    indiv.maxNumCluster = 15
+    indiv.numProxPoints = 10
+    indiv.size = N
+
+    matriz3D = []
+    for _ in range(RODADAS):
+        pontos_function1, pontos_function2 = geneticoMultiobjetivo2(df, MAX_GEN, Cols, TAM_POP)
+        matriz3D.append([pontos_function1, pontos_function2])
+    imprimeRodadas(matriz3D)
+
+    return
+
+def getNeighbors(df):
+    df2 = df.values.tolist()
+    neigh = NearestNeighbors(n_neighbors=len(df))
+    neigh.fit(df2)
+    return neigh.kneighbors(df2, return_distance=False)
+
+def tournament(pop:population, front, tournamentSize = 3):
+    idxPar = []
+
+    while len(idxPar) < 2:
+        competingParentIdx = []
+        score = []
+        for _ in range(tournamentSize):
+            idx = random.randint(0,pop.getSize()-1)
+            while idx in competingParentIdx:
+                idx = random.randint(0,pop.getSize()-1)
+            competingParentIdx.append(idx)
+            for idxFront in range(len(front)):
+                if idx in front[idxFront]:
+                    score.append(front[idxFront])
+        if competingParentIdx[score.index(min(score))] not in idxPar:
+            idxPar.append(competingParentIdx[score.index(min(score))])
+
+    return idxPar
+
+def geneticoMultiobjetivo2(df, MAX_GEN, Cols, TAM_POP):
+    pop = population()
+    for _ in range(TAM_POP):
+        pop.addMember(indiv())
+
+    gen_no = 0
+    neighborMatrix = getNeighbors(df)
+    while(gen_no < MAX_GEN):
+
+        pop.updateAllFitness(neighborMatrix, Cols, df)
+
+        fit01Values = [pop.members[i].fitness01 for i in range(pop.getSize())]
+        fit02Values = [pop.members[i].fitness02 for i in range(pop.getSize())]
+
+        non_dominated_sorted_solution = fast_non_dominated_sort(fit01Values[:],fit02Values[:])
         crowding_distance_values=[]
         for i in range(0,len(non_dominated_sorted_solution)):
-            crowding_distance_values.append(crowding_distance(function1_values[:],function2_values[:],non_dominated_sorted_solution[i][:]))
-        # print("População dividida em Fronteiras: ")
-        # print(non_dominated_sorted_solution)
-        # print("Crowding Distance da População (por fronteira): ")
-        # print(crowding_distance_values)
-        # montando a população mista (solution2): população atual + filhos
-        solution2 = populacao[:]  # copia população atual toda
-        # gerando os filhos
-        while(len(solution2)!=2*TAM_POP):
-            pai1 = random.randint(0,TAM_POP-1)  # seleciona um índice
-            pai2 = random.randint(0,TAM_POP-1)
-            # coloca na mista os filhos gerados no crossover e mutação
-            filho1, filho2 = crossover(populacao[pai1], populacao[pai2])
-            filho1 = mutation(filho1,neigh)
-            filho2 = mutation(filho2,neigh)
-            solution2.append(filho1)
-            solution2.append(filho2)
-        # avalia a população mista toda
-        function1_values2 = [function1(solution2[i], df, Cols) for i in range(0,2*TAM_POP)]
-        function2_values2 = [function2(solution2[i], df, Cols, neigh) for i in range(0,2*TAM_POP)]
-        non_dominated_sorted_solution2 = fast_non_dominated_sort(function1_values2[:],function2_values2[:])
+            crowding_distance_values.append(crowding_distance(fit01Values[:],fit02Values[:],non_dominated_sorted_solution[i][:]))
+
+        # Create offsprint population
+        popOffspring = population()
+        while(popOffspring.getSize() != pop.getSize()):
+            [idxParent01, idxParent02] = tournament(pop, non_dominated_sorted_solution)
+            offsprint01, offsprint02 = pop.members[idxParent01].getCrossover(pop.members[idxParent02])
+            offsprint01.mutate(neighborMatrix)
+            offsprint02.mutate(neighborMatrix)
+            popOffspring.addMember(offsprint01)
+            popOffspring.addMember(offsprint02)
+
+        popOffspring.updateAllFitness(neighborMatrix, Cols, df)
+        
+        popMix = population()
+        popMix.mergePopulation(pop)
+        popMix.mergePopulation(popOffspring)
+
+        fit01ValuesMix = [popMix.members[i].fitness01 for i in range(popMix.getSize())]
+        fit02ValuesMix = [popMix.members[i].fitness02 for i in range(popMix.getSize())]
+
+        ## Ajustar... um dia...
+        non_dominated_sorted_solutionMix = fast_non_dominated_sort(fit01ValuesMix[:],fit02ValuesMix[:])
         crowding_distance_values2=[]
-        for i in range(0,len(non_dominated_sorted_solution2)):
-            crowding_distance_values2.append(crowding_distance(function1_values2[:],function2_values2[:],non_dominated_sorted_solution2[i][:]))
+        for i in range(0,len(non_dominated_sorted_solutionMix)):
+            crowding_distance_values2.append(crowding_distance(fit01ValuesMix[:],fit02ValuesMix[:],non_dominated_sorted_solutionMix[i][:]))
         new_solution= []
-        for i in range(0,len(non_dominated_sorted_solution2)):
-            non_dominated_sorted_solution2_1 = [index_of(non_dominated_sorted_solution2[i][j],non_dominated_sorted_solution2[i] ) for j in range(0,len(non_dominated_sorted_solution2[i]))]
+        for i in range(0,len(non_dominated_sorted_solutionMix)):
+            non_dominated_sorted_solution2_1 = [index_of(non_dominated_sorted_solutionMix[i][j],non_dominated_sorted_solutionMix[i] ) for j in range(0,len(non_dominated_sorted_solutionMix[i]))]
             front22 = sort_by_values(non_dominated_sorted_solution2_1[:], crowding_distance_values2[i][:])
-            front = [non_dominated_sorted_solution2[i][front22[j]] for j in range(0,len(non_dominated_sorted_solution2[i]))]
+            front = [non_dominated_sorted_solutionMix[i][front22[j]] for j in range(0,len(non_dominated_sorted_solutionMix[i]))]
             front.reverse()
             for value in front:
                 new_solution.append(value)
@@ -79,20 +243,33 @@ def geneticoMultiobjetivo(populacao, TAM_POP, GERACOES, df, Cols):
                     break
             if (len(new_solution) == TAM_POP):
                 break
-        populacao = [solution2[i] for i in new_solution]
-        gen_no = gen_no + 1
+        
+        pop = population()
+        for idx in new_solution:
+            pop.addMember(popMix.members[idx])
+        
+        gen_no += 1
+    
     # prepara a fronteira final
-    # function1_values é uma lista com todos os valores de f1 de todos os indivíduos
-    function1_values = [function1(populacao[i], df, Cols) for i in range(TAM_POP)]
-    # function2_values é uma lista com todos os valores de f2 de todos os indivíduos
-    function2_values = [function2(populacao[i], df, Cols, neigh) for i in range(TAM_POP)]
-    non_dominated_sorted_solution = fast_non_dominated_sort(function1_values[:],function2_values[:])
+    pop.updateAllFitness(neighborMatrix, Cols, df)
+    fit01Values = [pop.members[i].fitness01 for i in range(pop.getSize())]
+    fit02Values = [pop.members[i].fitness02 for i in range(pop.getSize())]
+    ## Ajustar... um dia...
+    non_dominated_sorted_solution = fast_non_dominated_sort(fit01Values[:],fit02Values[:])
     pontos_function1 = []
     pontos_function2 = []
     for indiceIndiv in non_dominated_sorted_solution[0]:  # somente primeira fronteira
-        pontos_function1.append(function1_values[indiceIndiv])
-        pontos_function2.append(function2_values[indiceIndiv])
+        pontos_function1.append(fit01Values[indiceIndiv])
+        pontos_function2.append(fit02Values[indiceIndiv])
     return pontos_function1, pontos_function2
+
+def preparaBD(arquivo):
+    df = pd.read_csv(arquivo)
+    Cols = len(df.columns)
+    df2 = df.iloc[:,0:Cols-1]
+    Cols = len(df2.columns)
+    N = len(df2)
+    return df2, N, Cols
 
 def imprimeRodadas(matriz3D):
     plt.xlabel('f1', fontsize=15)
@@ -118,156 +295,8 @@ def imprimeRodadas(matriz3D):
     plt.ylim(ymin, ymax)
     plt.show()
 
-# @timer
-def getNeighbors(df):
-    df2 = df.values.tolist()
-    neigh = NearestNeighbors(n_neighbors=len(df))
-    neigh.fit(df2)
-    return neigh.kneighbors(df2, return_distance=False)
 
-# @timer
-def function2(x, df, Cols, neigh):
-    L = 10
-    df2 = df.values.tolist()
-    totalSum = 0
-    
-    for i in range(len(x)):
-        for l in range(1,L+1):
-            if x[neigh[i][l]] == x[i]:
-                continue
-            totalSum += 1/float(l+1)
-    return totalSum
-
-# @timer   
-def function1(x, df, Cols):
-    points = df.values
-    NClusters = max(x)
-    pointInCluster = [[] for _ in range(NClusters)]
-    clusterCenters = []
-    for cl in range(NClusters):
-        center = np.zeros(Cols)
-        counter = 0
-        for i in range(len(x)):
-            if x[i] != cl:
-                continue
-            counter = counter + 1
-            center = points[i] + center
-            pointInCluster[cl].append(points[i])
-        clusterCenters.append(center/counter)
-    
-    finalsum = 0
-    for cl in range(NClusters):
-        if not pointInCluster[cl]:
-            continue
-        finalsum += np.linalg.norm(clusterCenters[cl] - pointInCluster[cl])
-    return finalsum    
-
-def inicializaIndividuoAleatorio(N, CLUSTERS=30):
-    individuo = [0]*N
-    for a in range(N):
-        individuo[a] = random.randint(0,CLUSTERS)
-    return individuo
-    
-def inicializaPopulacaoAleatoria(TAM_POP, N, CLUSTERS=30):
-    populacao = []
-    CLUSTERS = 15  # TESTAR DIFERENTES VALORES
-    for i in range(TAM_POP):
-        individuo = inicializaIndividuoAleatorio(N, CLUSTERS)
-        # individuo = inicializaIndividuoAleatorio(CLUSTERS)
-        populacao.append(individuo)
-    return populacao
-
-def preparaBD(arquivo):
-    df = pd.read_csv(arquivo)
-    Cols = len(df.columns)
-    df2 = df.iloc[:,0:Cols-1]
-    Cols = len(df2.columns)
-    N = len(df2)
-    return df2, N, Cols
-
-def mutation(indv, neigh):
-    if (random.random() < 0.5):
-        a = mutation1(indv)
-    else:
-        a = mutation2(indv, neigh)
-    return a
-
-def mutation1(indv):
-    # N = len(indv)
-    return indv
-
-def mutation2(indv, neigh):
-    N = len(indv)
-    randMutation1 = random.randint(0,N-1)
-    for i in range(N):
-        if indv[neigh[randMutation1][i]] != indv[randMutation1]:
-            indv[randMutation1] = indv[neigh[randMutation1][i]]
-            break
-    return indv
-
-def crossover(indv1, indv2):
-    N = len(indv1)
-    CUTS = 5
-    cuts = [random.randint(0,N-1) for _ in range(CUTS)]
-    a = [0 for _ in range(N)]
-    b = [0 for _ in range(N)]
-    invert = 0
-    for i in range(N):
-        if i in cuts:
-            invert = not invert
-        if not invert:
-            a[i] = indv1[i]
-            b[i] = indv2[i]
-        else:
-            a[i] = indv2[i]
-            b[i] = indv1[i]
-
-    return [a, b]
-
-@timer
-def run(GERACOES=1, TAM_POP=4, RODADAS=1):
-    df, N, Cols = preparaBD("diabetes.csv")  
-    matriz3D = []
-    for r in range(RODADAS):
-        populacao = inicializaPopulacaoAleatoria(TAM_POP, N)
-        pontos_function1, pontos_function2 = geneticoMultiobjetivo(populacao, TAM_POP, GERACOES, df, Cols)
-        matriz3D.append([pontos_function1, pontos_function2])
-    imprimeRodadas(matriz3D)
-
-# função principal: chama as demais funções
-def main(): 
-    # run(GERACOES=1, TAM_POP=4, RODADAS=1)
-    # # definir parâmetros do Genético
-    GERACOES = 1
-    TAM_POP = 4
-    RODADAS = 1  
-    # # leitura e preparação da base de dados: 
-    df, N, Cols = preparaBD("diabetes.csv")  
-    matriz3D = []  # matriz com todas as fronteiras
-    for r in range(RODADAS):
-    #     # Genético
-        populacao = inicializaPopulacaoAleatoria(TAM_POP, N)
-        # print(function1(populacao[0], df, Cols))
-    #     # populacao = inicializaPopulacaoKMEANS(df, N, 0, TAM_POP)
-    #     # populacao = populacao1 + populacao2
-    #     # print("Individuo", populacao)
-    #     # print("Individuo 1")        
-    #     # desenhaClusters(populacao[0], N)
-    #     # print("Individuo 2")
-    #     # desenhaClusters(popula-cao[1], N)
-    #     # print("Individuo 3")
-    #     # desenhaClusters(populacao[2], N)
-    #     # print("Individuo 4")
-    #     # desenhaClusters(populacao[3], N)
-        pontos_function1, pontos_function2 = geneticoMultiobjetivo(populacao, TAM_POP, GERACOES, df, Cols)
-        matriz3D.append([pontos_function1, pontos_function2])
-    imprimeRodadas(matriz3D)
-    return
-
-
-##%%
 if __name__ == "__main__":
-    run(GERACOES=200, TAM_POP=100, RODADAS=5)
-    # main()
-
-
+    # run(GERACOES=200, TAM_POP=100, RODADAS=5)
+    main(GERACOES=200, TAM_POP=100, RODADAS=5)
+    # test()

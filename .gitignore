@@ -1,2 +1,4 @@
-__pycache__/
-planejamento/
+*.pyc
+.vscode
+data/out/
+dist/

@@ -1,32 +1,31 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# # Package meta-data.
+from distutils.core import setup
+
 NAME = 'sampleproject'
 VERSION = '0.0.1'
 DESCRIPTION = 'A sample Python project.'
 URL = 'https://github.com/me/myproject'
 AUTHOR = 'A. Random Developer'
-EMAIL = 'author@example.com'
-
-
-from setuptools import setup, find_packages
-import pathlib
-
-here = pathlib.Path(__file__).parent.resolve()
-
-# Get the long description from the README file
-LONG_DESCRIPTION = (here / 'README.md').read_text(encoding='utf-8')
+AUTHOR_EMAIL = 'author@example.com'
+MAINTAINER = AUTHOR
+MAINTAINER_EMAIL = AUTHOR_EMAIL
+LICENSE = 'MIT'
+# LONG_DESCRIPTION = ''
 
 setup(
     name=NAME,
     version=VERSION,
     description=DESCRIPTION,
-    long_description=LONG_DESCRIPTION,
-    long_description_content_type='text/markdown',
+    # long_description=LONG_DESCRIPTION,
+    # long_description_content_type='text/markdown',
     url=URL,
     author=AUTHOR,
-    author_email=EMAIL,
+    author_email=AUTHOR_EMAIL,
+    maintainer=MAINTAINER,
+    maintainer_email=MAINTAINER_EMAIL,
+    license = LICENSE,
     classifiers=[
         'Development Status :: 1 - Planning',
 
@@ -43,9 +42,9 @@ setup(
         'Programming Language :: Python :: 3 :: Only',
     ],
 
-    package_dir={'': 'src'},
+    package_dir={'genetic': 'src'},
 
-    packages=find_packages(where='src'), 
+    packages=['genetic'], 
 
     python_requires='>=3.9, <4',
 

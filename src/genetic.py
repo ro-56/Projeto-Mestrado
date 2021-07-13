@@ -2,7 +2,6 @@ import copy
 import pandas as pd
 import numpy as np
 import random
-import os
 import networkx as nx
 import matplotlib.pyplot as plt
 import pylab
@@ -11,6 +10,7 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.neighbors import NearestNeighbors
 from datetime import datetime
 import gc
+import time
 import cProfile
 from pstats import Stats, SortKey
 import time
@@ -41,7 +41,7 @@ class indiv:
     numProxPoints = 0
     crossoverCuts = 5
 
-    def __init__(self, data = []):
+    def __init__(self, data:list[int] = []):
         self.resetFitness()
         if len(data):
             self.data = data
@@ -55,13 +55,18 @@ class indiv:
     def randomInitialization(self):
         self.data = [random.randint(0,self.maxNumCluster-1) for _ in range(self.size)]
     
-    def updateAllFitness(self, neighborMatrix, numAttributes:int, df):
-        self.updateFitness01(numAttributes, df)
-        self.updateFitness02(neighborMatrix)
-    
-    def updateFitness01(self, numAttributes:int, df):
-        dfValues = df.values.tolist()
-        centroidList, pointsIdxInCluster = self.getCentroids(numAttributes, df)
+    def getCentroids(self, numAttributes:int, dfValues):
+        centroidList = [[0 for _ in range(numAttributes)] for _ in range(self.maxNumCluster)]
+        pointsInCluster = []
+        for idxCluster in range(self.maxNumCluster):
+            pointsIdxInCluster = [i for i, point in enumerate(self.data) if point == idxCluster]
+            pointsInCluster.append(pointsIdxInCluster)
+            for idxAttr in range(numAttributes):
+                centroidList[idxCluster][idxAttr] = getAverageValue([dfValues[pointIdx][idxAttr] for pointIdx in pointsIdxInCluster])
+        return centroidList, pointsInCluster 
+
+    def updateFitness01(self, numAttributes:int, dfValues):
+        centroidList, pointsIdxInCluster = self.getCentroids(numAttributes, dfValues)
         pointsInCluster = [[dfValues[idxPoint] for idxPoint in pointsIdxInCluster[idxCluster]] for idxCluster in range(self.maxNumCluster)]
         finalsum = 0
         for idxCluster in range(self.maxNumCluster):
@@ -78,40 +83,10 @@ class indiv:
                     continue
                 totalSum += 1/float(idxNearPoint+1)
         self.fitness02 = totalSum
-    
-    def getCentroids(self, numAttributes:int, df):
-        dfValues = df.values.tolist()
-        centroidList = [[0 for _ in range(numAttributes)] for _ in range(self.maxNumCluster)]
-        pointsInCluster = []
-        for idxCluster in range(self.maxNumCluster):
-            pointsIdxInCluster = [i for i, point in enumerate(self.data) if point == idxCluster]
-            pointsInCluster.append(pointsIdxInCluster)
-            for idxAttr in range(numAttributes):
-                centroidList[idxCluster][idxAttr] = getAverageValue([dfValues[pointIdx][idxAttr] for pointIdx in pointsIdxInCluster])
-        return centroidList, pointsInCluster 
 
-    def getCrossover(self, otherIndiv:"indiv"):
-        cuts = [random.randint(0,self.size-1) for _ in range(self.crossoverCuts)]
-        a = [0 for _ in range(self.size)]
-        b = [0 for _ in range(self.size)]
-        invert = 0
-        for i in range(self.size):
-            if i in cuts:
-                invert = not invert
-            if not invert:
-                a[i] = self.data[i]
-                b[i] = otherIndiv.data[i]
-            else:
-                a[i] = otherIndiv.data[i]
-                b[i] = self.data[i]
-
-        return indiv(a), indiv(b)
-
-    def mutate(self, neighborMatrix):
-        if (random.random() < 0.5):
-            self.mutation01()
-        else:
-            self.mutation02(neighborMatrix)
+    def updateAllFitness(self, neighborMatrix, numAttributes:int, dfValues):
+        self.updateFitness01(numAttributes, dfValues)
+        self.updateFitness02(neighborMatrix)
     
     def mutation01(self):
         return
@@ -122,12 +97,21 @@ class indiv:
             if self.data[randMutationPoint] != self.data[neighborMatrix[randMutationPoint][idx]]:
                 self.data[randMutationPoint] = self.data[neighborMatrix[randMutationPoint][idx]]
                 break
+    
+    def mutate(self, neighborMatrix):
+        if (random.random() < 0.5):
+            self.mutation01()
+        else:
+            self.mutation02(neighborMatrix)
         self.resetFitness()
 
 class population:
 
-    def __init__(self):
-        self.members = []
+    def __init__(self, members = []):
+        if len(members):
+            self.members = members
+        else:
+            self.members = []
 
     def addMember(self, indiv:indiv):
         self.members.append(indiv)
@@ -139,15 +123,32 @@ class population:
             else:
                 self.members.append(indiv)
 
-    def getSize(self):
+    def getSize(self) -> int:
         return len(self.members) 
 
-    def updateAllFitness(self, neighborMatrix, numAttributes:int, df):
+    def updateAllFitness(self, neighborMatrix, numAttributes:int, dfValues):
         for indiv in self.members:
-            indiv.updateAllFitness(neighborMatrix, numAttributes, df)
+            indiv.updateAllFitness(neighborMatrix, numAttributes, dfValues)
 
 # Auxiliar Functions
 # --------------------
+
+def crossover(indiv_a:indiv, indiv_b:indiv):
+        cuts = [random.randint(0,indiv_a.size-1) for _ in range(indiv_a.crossoverCuts)]
+        a = [0 for _ in range(indiv_a.size)]
+        b = [0 for _ in range(indiv_b.size)]
+        invert = 0
+        for i in range(indiv_a.size):
+            if i in cuts:
+                invert = not invert
+            if not invert:
+                a[i] = indiv_a.data[i]
+                b[i] = indiv_b.data[i]
+            else:
+                a[i] = indiv_b.data[i]
+                b[i] = indiv_a.data[i]
+
+        return indiv(a), indiv(b)
 
 def getAverageValue(vector):
     if not len(vector):
@@ -190,6 +191,31 @@ def tournament(pop:population, front, tournamentSize = 3):
             idxPar.append(competingParentIdx[score.index(min(score))])
 
     return idxPar
+
+def progressBar(iterable, prefix = '', suffix = '', decimals = 1, length = 50, fill = '█', printEnd = "\r"):
+    """
+    Call in a loop to create terminal progress bar
+    @params:
+        iteration   - Required  : current iteration (Int)
+        total       - Required  : total iterations (Int)
+        prefix      - Optional  : prefix string (Str)
+        suffix      - Optional  : suffix string (Str)
+        decimals    - Optional  : positive number of decimals in percent complete (Int)
+        length      - Optional  : character length of bar (Int)
+        fill        - Optional  : bar fill character (Str)
+        printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
+    """
+    total = len(iterable)
+    def printProgressBar (iteration):
+        percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+        filledLength = int(length * iteration // total)
+        bar = fill * filledLength + '-' * (length - filledLength)
+        print(f'\r{prefix} |{bar}| {percent}% {suffix}', end = printEnd)
+    printProgressBar(0)
+    for i, item in enumerate(iterable):
+        yield item
+        printProgressBar(i + 1)
+    print()
 
 # graphs
 # --------------------
@@ -275,18 +301,28 @@ def printHeatMap(res, paretoFront):
     plt.savefig(tag_dir+'heatmap.png')
     plt.close()
 
+def normalize_data(lst):
+    arr = np.asarray(lst)
+    normArr = []
+    for i in range(len(arr[0])):
+        aux = []
+        aux = (arr[:,i] - np.min(arr[:,i])) / (np.max(arr[:,i]) - np.min(arr[:,i]))
+        normArr.append(aux)
+    normArr = np.stack(normArr)
+    return normArr.transpose().tolist()
+
 # 
 # ------------------
 def geneticoMultiobjetivo2(df, MAX_GEN, Cols, TAM_POP):
-    pop = population()
-    for _ in range(TAM_POP):
-        pop.addMember(indiv())
+    pop = population([indiv() for _ in range(TAM_POP)])
 
-    gen_no = 0
     neighborMatrix = getNeighbors(df)
-    while(gen_no < MAX_GEN):
+    dfValues = normalize_data(df.values.tolist())
 
-        pop.updateAllFitness(neighborMatrix, Cols, df)
+    gens = list(range(MAX_GEN))
+    for _ in progressBar(gens, prefix = 'Progress:', suffix = 'Complete'):
+
+        pop.updateAllFitness(neighborMatrix, Cols, dfValues)
 
         fit01Values = [pop.members[i].fitness01 for i in range(pop.getSize())]
         fit02Values = [pop.members[i].fitness02 for i in range(pop.getSize())]
@@ -300,13 +336,13 @@ def geneticoMultiobjetivo2(df, MAX_GEN, Cols, TAM_POP):
         popOffspring = population()
         while(popOffspring.getSize() != pop.getSize()):
             [idxParent01, idxParent02] = tournament(pop, non_dominated_sorted_solution)
-            offsprint01, offsprint02 = pop.members[idxParent01].getCrossover(pop.members[idxParent02])
+            offsprint01, offsprint02 = crossover(pop.members[idxParent01],pop.members[idxParent02])
             offsprint01.mutate(neighborMatrix)
             offsprint02.mutate(neighborMatrix)
             popOffspring.addMember(offsprint01)
             popOffspring.addMember(offsprint02)
 
-        popOffspring.updateAllFitness(neighborMatrix, Cols, df)
+        popOffspring.updateAllFitness(neighborMatrix, Cols, dfValues)
         
         popMix = population()
         popMix.mergePopulation(pop)
@@ -336,11 +372,10 @@ def geneticoMultiobjetivo2(df, MAX_GEN, Cols, TAM_POP):
         pop = population()
         for idx in new_solution:
             pop.addMember(popMix.members[idx])
-        
-        gen_no += 1
+        del popMix, popOffspring
     
     # prepara a fronteira final
-    pop.updateAllFitness(neighborMatrix, Cols, df)
+    pop.updateAllFitness(neighborMatrix, Cols, dfValues)
     fit01Values = [pop.members[i].fitness01 for i in range(pop.getSize())]
     fit02Values = [pop.members[i].fitness02 for i in range(pop.getSize())]
     ## Ajustar... um dia...
@@ -356,7 +391,7 @@ def geneticoMultiobjetivo2(df, MAX_GEN, Cols, TAM_POP):
 # --------------------
 def setupProfiler():
     with cProfile.Profile() as pr:
-            main(MAX_GEN=1,TAM_POP=10)
+            main(MAX_GEN=10,TAM_POP=50)
 
     with open(tag_dir+'/profiling_stats.txt', 'w') as stream:
         stats = Stats(pr, stream=stream)
@@ -370,11 +405,12 @@ def main(MAX_GEN=10,TAM_POP=10):
     print('-----done-----')
     return
 
+@timer
 def run(MAX_GEN = 10, TAM_POP = 10, RODADAS = 1):
     df, N, Cols, res = preparaBD("data/diabetes.csv") 
 
-    indiv.maxNumCluster = 5
-    indiv.numProxPoints = 50
+    indiv.maxNumCluster = 4
+    indiv.numProxPoints = 150
     indiv.size = N
 
     matriz3D = []
@@ -400,8 +436,8 @@ def setupDir():
 tag_dir = ''
 setupDir()
 if __name__ == "__main__":
-    do_profiling = True
+    do_profiling = False
     if do_profiling:
         setupProfiler()
     else:
-        main(MAX_GEN=1000,TAM_POP=50)
+        main(MAX_GEN=100,TAM_POP=100)

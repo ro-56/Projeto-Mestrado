@@ -11,5 +11,16 @@ class TestStringMethods(unittest.TestCase):
         lst = []
         self.assertEqual(gen.getAverageValue(lst), 0)
 
+
+
+
+
+
+
+
+
+
+
+
 if __name__ == '__main__':
     unittest.main()

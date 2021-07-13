@@ -36,11 +36,13 @@ def fast_non_dominated_sort(values1, values2):   # dois objetivos de maximizaÃ§Ã
         n[p]=0
         for q in range(0, len(values1)):
             # if (values1[p] > values1[q] and values2[p] > values2[q]) or (values1[p] >= values1[q] and values2[p] > values2[q]) or (values1[p] > values1[q] and values2[p] >= values2[q]):
-            if (values1[p] <= values1[q] and values2[p] <= values2[q]) and not (values1[p] == values1[q] and values2[p] == values2[q]):
+            if (values1[p] < values1[q] and values2[p] < values2[q]) or (values1[p] <= values1[q] and values2[p] < values2[q]) or (values1[p] < values1[q] and values2[p] <= values2[q]):
+            # if (values1[p] <= values1[q] and values2[p] <= values2[q]) and not (values1[p] == values1[q] and values2[p] == values2[q]):
                 if q not in S[p]:
                     S[p].append(q) # p domina q
             # elif (values1[q] > values1[p] and values2[q] > values2[p]) or (values1[q] >= values1[p] and values2[q] > values2[p]) or (values1[q] > values1[p] and values2[q] >= values2[p]):
-            elif (values1[q] <= values1[p] and values2[q] <= values2[p]) and not (values1[q] == values1[p] and values2[q] == values2[p]):
+            elif (values1[q] < values1[p] and values2[q] < values2[p]) or (values1[q] <= values1[p] and values2[q] < values2[p]) or (values1[q] < values1[p] and values2[q] <= values2[p]):
+            # elif (values1[q] <= values1[p] and values2[q] <= values2[p]) and not (values1[q] == values1[p] and values2[q] == values2[p]):
                 n[p] = n[p] + 1  # q domina p
         if n[p]==0:
             rank[p] = 0
@@ -73,7 +75,7 @@ def crowding_distance(values1, values2, front):
     for k in range(1,len(front)-1):
         distance[k] = distance[k]+ (values1[sorted1[k+1]] - values2[sorted1[k-1]])/(max(values1)-min(values1))
     for k in range(1,len(front)-1):
-        distance[k] = distance[k]+ (values1[sorted2[k+1]] - values2[sorted2[k-1]])/(max(values2)-min(values2))
+        distance[k] = distance[k]+ (values2[sorted2[k+1]] - values2[sorted2[k-1]])/(max(values2)-min(values2))
     return distance
 
 

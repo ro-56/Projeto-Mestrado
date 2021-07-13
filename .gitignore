@@ -2,3 +2,4 @@
 .vscode
 data/out/
 dist/
+*.egg-info

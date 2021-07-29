@@ -62,3 +62,43 @@ torneio binário/ternário com rank e crownding distance como funções de desen
 https://github.com/haris989/NSGA-II/issues/7
 
 atualização do algoritmo nsga_2
+
+---
+
+Procurar novas bases de dados
+preferencialmente com dados de acurácia, matrix de decisão, curva ROC, entre outros fatores
+
+---
+
+Discutir a utilização de diferentes distâncias
+
+1. Testar no R2
+2. Deixar redondinho
+3. Aponstar dificuldades para o rn
+4. Tentar aplciar para mais bases
+
+---
+Para testar resultados de bases em alta dimesão: testar em algoritmos supervisionados primeiro para testar a acurácia do modelo na base, e depois testar no não supervisionado
+
+---
+
+
+---
+Tipos de visualização dos clusteres gerados:
+
+no R2:
+- 1) 
+
+
+                  x |                    
+             x  x   |                o    
+           x  x     |              o  o    
+        x x x       |         o  o o        
+      x  x          |         o  o         
+---------------------------o---o----------
+   x  x             |    o  o              
+  x   x             | o  o   o              
+x x             o o | o  o                 
+  x          o  o  o|  o                  
+             o    o |                    
+					

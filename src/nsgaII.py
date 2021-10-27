@@ -73,9 +73,15 @@ def crowding_distance(values1, values2, front):
     distance[0] = 4444444444444444
     distance[len(front) - 1] = 4444444444444444
     for k in range(1,len(front)-1):
-        distance[k] = distance[k]+ (values1[sorted1[k+1]] - values2[sorted1[k-1]])/(max(values1)-min(values1))
+        try:
+            distance[k] = distance[k] + (values1[sorted1[k+1]] - values2[sorted1[k-1]])/(max(values1)-min(values1))
+        except:
+            distance[k] = distance[k]
     for k in range(1,len(front)-1):
-        distance[k] = distance[k]+ (values2[sorted2[k+1]] - values2[sorted2[k-1]])/(max(values2)-min(values2))
+        try:
+            distance[k] = distance[k] + (values2[sorted2[k+1]] - values2[sorted2[k-1]])/(max(values2)-min(values2))
+        except:
+            distance[k] = distance[k]
     return distance
 
 

@@ -1,162 +1,28 @@
-import copy
+
+import math
+from numpy.core.fromnumeric import size
 import pandas as pd
 import numpy as np
-import random
 import networkx as nx
 import matplotlib.pyplot as plt
-import pylab
-from sklearn.cluster import KMeans
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.neighbors import NearestNeighbors
+from sklearn.cluster import KMeans
+from sklearn_extra.cluster import KMedoids
 from datetime import datetime
-import gc
 import time
-import cProfile
-from pstats import Stats, SortKey
-import time
+from math import floor
 from pathlib import Path
 
-if __name__ == "__main__":
-    import nsgaII
-else:
-    from . import nsgaII
+from classes import indiv, population
+from operators import crossover, tournament
+from misc import progressBar, timer
+from kruscal import kruscalGenIndiv
+import nsgaII
 
-# decorators
-# -------------------
-def timer(func):
-    def wrapper(*args, **kwargs):
-        startTime = time.time()
-        ret = func(*args, **kwargs)
-        delta = time.time() - startTime
-        print(func.__name__, "elapsed time: ", delta)
-        return ret
-    return wrapper
-
-# classes
-# --------------------
-class indiv:
-
-    maxNumCluster = 0
-    size = 0
-    numProxPoints = 0
-    crossoverCuts = 5
-
-    def __init__(self, data:list[int] = []):
-        self.resetFitness()
-        if len(data):
-            self.data = data
-        else:
-            self.randomInitialization()
-
-    def resetFitness(self):
-        self.fitness01 = 0
-        self.fitness02 = 0
-
-    def randomInitialization(self):
-        self.data = [random.randint(0,self.maxNumCluster-1) for _ in range(self.size)]
-    
-    def getCentroids(self, numAttributes:int, dfValues):
-        centroidList = [[0 for _ in range(numAttributes)] for _ in range(self.maxNumCluster)]
-        pointsInCluster = []
-        for idxCluster in range(self.maxNumCluster):
-            pointsIdxInCluster = [i for i, point in enumerate(self.data) if point == idxCluster]
-            pointsInCluster.append(pointsIdxInCluster)
-            for idxAttr in range(numAttributes):
-                centroidList[idxCluster][idxAttr] = getAverageValue([dfValues[pointIdx][idxAttr] for pointIdx in pointsIdxInCluster])
-        return centroidList, pointsInCluster 
-
-    def updateFitness01(self, numAttributes:int, dfValues):
-        centroidList, pointsIdxInCluster = self.getCentroids(numAttributes, dfValues)
-        pointsInCluster = [[dfValues[idxPoint] for idxPoint in pointsIdxInCluster[idxCluster]] for idxCluster in range(self.maxNumCluster)]
-        finalsum = 0
-        for idxCluster in range(self.maxNumCluster):
-            if not pointsInCluster[idxCluster]:
-                continue
-            finalsum += np.linalg.norm(centroidList[idxCluster] - np.array(pointsInCluster[idxCluster])) 
-        self.fitness01 = finalsum
-
-    def updateFitness02(self, neighborMatrix):
-        totalSum = 0
-        for idxData in range(self.size):
-            for idxNearPoint in range(1,self.numProxPoints + 1):
-                if self.data[neighborMatrix[idxData][idxNearPoint]] == self.data[idxData]:
-                    continue
-                totalSum += 1/float(idxNearPoint+1)
-        self.fitness02 = totalSum
-
-    def updateAllFitness(self, neighborMatrix, numAttributes:int, dfValues):
-        self.updateFitness01(numAttributes, dfValues)
-        self.updateFitness02(neighborMatrix)
-    
-    def mutation01(self):
-        return
-
-    def mutation02(self, neighborMatrix):
-        randMutationPoint = random.randint(0,self.size-1)
-        for idx in range(self.size):
-            if self.data[randMutationPoint] != self.data[neighborMatrix[randMutationPoint][idx]]:
-                self.data[randMutationPoint] = self.data[neighborMatrix[randMutationPoint][idx]]
-                break
-    
-    def mutate(self, neighborMatrix):
-        if (random.random() < 0.5):
-            self.mutation01()
-        else:
-            self.mutation02(neighborMatrix)
-        self.resetFitness()
-
-class population:
-
-    def __init__(self, members = []):
-        if len(members):
-            self.members = members
-        else:
-            self.members = []
-
-    def addMember(self, indiv:indiv):
-        self.members.append(indiv)
-
-    def mergePopulation(self, otherPop:"population", deepCopy = 0):
-        for indiv in otherPop.members:
-            if deepCopy:
-                self.members.append(copy.deepcopy(indiv))
-            else:
-                self.members.append(indiv)
-
-    def getSize(self) -> int:
-        return len(self.members) 
-
-    def updateAllFitness(self, neighborMatrix, numAttributes:int, dfValues):
-        for indiv in self.members:
-            indiv.updateAllFitness(neighborMatrix, numAttributes, dfValues)
 
 # Auxiliar Functions
 # --------------------
-
-def crossover(indiv_a:indiv, indiv_b:indiv):
-        cuts = [random.randint(0,indiv_a.size-1) for _ in range(indiv_a.crossoverCuts)]
-        a = [0 for _ in range(indiv_a.size)]
-        b = [0 for _ in range(indiv_b.size)]
-        invert = 0
-        for i in range(indiv_a.size):
-            if i in cuts:
-                invert = not invert
-            if not invert:
-                a[i] = indiv_a.data[i]
-                b[i] = indiv_b.data[i]
-            else:
-                a[i] = indiv_b.data[i]
-                b[i] = indiv_a.data[i]
-
-        return indiv(a), indiv(b)
-
-def getAverageValue(vector):
-    if not len(vector):
-        return 0
-    return sum(vector) / len(vector)
-
-def kmeansNClusters(array, numClusters=2):
-    return
 
 def preparaBD(arquivo):
     df = pd.read_csv(arquivo)
@@ -173,53 +39,10 @@ def getNeighbors(df):
     neigh.fit(df2)
     return neigh.kneighbors(df2, return_distance=False)
 
-def tournament(pop:population, front, tournamentSize = 3):
-    idxPar = []
-
-    while len(idxPar) < 2:
-        competingParentIdx = []
-        score = []
-        for _ in range(tournamentSize):
-            idx = random.randint(0,pop.getSize()-1)
-            while idx in competingParentIdx:
-                idx = random.randint(0,pop.getSize()-1)
-            competingParentIdx.append(idx)
-            for idxFront in range(len(front)):
-                if idx in front[idxFront]:
-                    score.append(front[idxFront])
-        if competingParentIdx[score.index(min(score))] not in idxPar:
-            idxPar.append(competingParentIdx[score.index(min(score))])
-
-    return idxPar
-
-def progressBar(iterable, prefix = '', suffix = '', decimals = 1, length = 50, fill = '█', printEnd = "\r"):
-    """
-    Call in a loop to create terminal progress bar
-    @params:
-        iteration   - Required  : current iteration (Int)
-        total       - Required  : total iterations (Int)
-        prefix      - Optional  : prefix string (Str)
-        suffix      - Optional  : suffix string (Str)
-        decimals    - Optional  : positive number of decimals in percent complete (Int)
-        length      - Optional  : character length of bar (Int)
-        fill        - Optional  : bar fill character (Str)
-        printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
-    """
-    total = len(iterable)
-    def printProgressBar (iteration):
-        percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
-        filledLength = int(length * iteration // total)
-        bar = fill * filledLength + '-' * (length - filledLength)
-        print(f'\r{prefix} |{bar}| {percent}% {suffix}', end = printEnd)
-    printProgressBar(0)
-    for i, item in enumerate(iterable):
-        yield item
-        printProgressBar(i + 1)
-    print()
 
 # graphs
 # --------------------
-def imprimeRodadas(matriz3D):
+def imprimeRodadas(matriz3D, title:str):
     plt.xlabel('f1', fontsize=15)
     plt.ylabel('f2', fontsize=15)
     xmin = matriz3D[0][0][0]
@@ -238,10 +61,11 @@ def imprimeRodadas(matriz3D):
             ymin = min(pontos_function2)
         if max(pontos_function2) > ymax:
             ymax = max(pontos_function2)
-        plt.scatter(pontos_function1, pontos_function2)
+        plt.scatter(pontos_function1, pontos_function2, label=fronteira[2])
     plt.xlim(xmin, xmax)
     plt.ylim(ymin, ymax)
-    # plt.show()
+    plt.legend(loc="upper right")
+    plt.title(title)
     plt.savefig(tag_dir+'paretoFront.png')
     plt.close()
     return
@@ -263,12 +87,13 @@ def desenhaGrafos(lst, N, res, idx=0):
 
     for node in G:
         if isInt(node):
-            if res[node][0]:
-                color_map.append('red')
-            else:
-                color_map.append('blue')
+            color_map.append(res[node][0]+1)
+            # if res[node][0]:
+            #     color_map.append('red')
+            # else:
+            #     color_map.append('blue')
         else:
-            color_map.append('black')
+            color_map.append(0)
     
     fig = plt.figure(figsize=(50, 50))
     nx.draw(G, edge_color='black', with_labels=True, arrows=False,node_color=color_map) 
@@ -277,29 +102,30 @@ def desenhaGrafos(lst, N, res, idx=0):
     plt.close()
     return
 
-def printHeatMap(res, paretoFront):
+def printHeatMap(res, fronts):
 
     def sortKey(list):
         return list[1]
-
-    Indvsize = len(paretoFront[0])
-    size = len(paretoFront)
-    mapMatrix = [[0 for _ in range(Indvsize)] for _ in range(Indvsize)]
     
-    auxMap = [[i, res[i][0]] for i in range(Indvsize) ]
-    auxMap.sort(key=sortKey,reverse=True)
+    for idx, paretoFront in enumerate(fronts):
+        Indvsize = len(paretoFront[0])
+        size = len(paretoFront)
+        mapMatrix = [[0 for _ in range(Indvsize)] for _ in range(Indvsize)]
+        
+        auxMap = [[i, res[i][0]] for i in range(Indvsize) ]
+        auxMap.sort(key=sortKey,reverse=True)
 
-    for i in range(size):
-        for j in [auxMap[idx][0] for idx in range(Indvsize)]:
-            for k in [auxMap[idx][0] for idx in range(Indvsize)]:
-                if paretoFront[i][j] == paretoFront[i][k]:
-                    mapMatrix[j][k] += 1
+        for i in range(size):
+            for j in [auxMap[idx][0] for idx in range(Indvsize)]:
+                for k in [auxMap[idx][0] for idx in range(Indvsize)]:
+                    if paretoFront[i][j] == paretoFront[i][k]:
+                        mapMatrix[j][k] += 1
 
-    fig, ax = plt.subplots()
-    im = ax.imshow(mapMatrix)
-    # plt.show()
-    plt.savefig(tag_dir+'heatmap.png')
-    plt.close()
+        fig, ax = plt.subplots()
+        im = ax.imshow(mapMatrix)
+        # plt.show()
+        plt.savefig(f"{tag_dir}heatmap{idx}.png")
+        plt.close()
 
 def normalize_data(lst):
     arr = np.asarray(lst)
@@ -313,8 +139,68 @@ def normalize_data(lst):
 
 # 
 # ------------------
-def geneticoMultiobjetivo2(df, MAX_GEN, Cols, TAM_POP):
-    pop = population([indiv() for _ in range(TAM_POP)])
+
+def solveKmeans(points, nClusters):
+    X = np.array(points)
+    kmeans = KMeans(n_clusters=nClusters).fit(X)
+    return kmeans.labels_.tolist()
+
+def solveKmedoids(points, nClusters):
+    X = np.array(points)
+    kmeans = KMedoids(n_clusters=nClusters).fit(X)
+    return kmeans.labels_.tolist()
+    
+def getDistanceMatrix(points, dist = ""):
+
+    validDistances = {""}
+    if dist not in validDistances:
+        raise ValueError("results: status must be one of %r." % validDistances)
+    
+    dist = [[0 for _ in range(len(points))] for _ in range(len(points))]
+
+    for i in range(len(points)):
+        for j in range(len(points)):
+            if (i == j):
+                dist[i][j] = 0
+                continue
+            if (j < i):
+                continue
+            d = 0.0
+            for k in range(len(points[0])):
+                d += (points[i][k] - points[j][k])**2
+            d = math.sqrt(d)
+            dist[i][j] = d
+            dist[j][i] = d
+
+    return dist
+
+
+def geneticoMultiobjetivo2(df, MAX_GEN, Cols, TAM_POP, kruscal_size=1, kmeans_size=1, kmedoids_size=1):
+
+    dist = getDistanceMatrix(df.values.tolist())
+
+    pop = population()
+
+    pop_fraction = [kruscal_size, kmeans_size, kmedoids_size]
+    pop_fraction = [floor((pop_fraction[i]/sum(pop_fraction)) * TAM_POP) for i in range(len(pop_fraction))]
+
+    # Parcela Kruscal
+    ind = kruscalGenIndiv(dist, 2, pop_fraction[0])
+    for i in ind:
+        pop.addMember(i)
+
+    # Parcela kmeans
+    numClusters = 2
+    while pop.getSize() < (pop_fraction[0] + pop_fraction[1]):
+        pop.addMember(indiv(solveKmeans(df.values.tolist(), numClusters)))
+        numClusters += 1
+    
+    # Parcela kmedoids
+    numClusters = 2
+    while pop.getSize() < TAM_POP:
+        pop.addMember(indiv(solveKmedoids(df.values.tolist(), numClusters)))
+        numClusters += 1
+    
 
     neighborMatrix = getNeighbors(df)
     dfValues = normalize_data(df.values.tolist())
@@ -389,38 +275,70 @@ def geneticoMultiobjetivo2(df, MAX_GEN, Cols, TAM_POP):
 
 # 
 # --------------------
-def setupProfiler():
-    with cProfile.Profile() as pr:
-            main(MAX_GEN=10,TAM_POP=50)
 
-    with open(tag_dir+'/profiling_stats.txt', 'w') as stream:
-        stats = Stats(pr, stream=stream)
-        stats.strip_dirs()
-        stats.sort_stats('cumtime')
-        stats.print_stats()
+
+def desenhagrafo2d(lst, N, dfValues, idx):
+    x = []
+    y = []
+    color = []
+
+    for i in range(len(dfValues)):
+        x.append(dfValues[i][0])
+        y.append(dfValues[i][1])
+        color.append(lst[i])
+    plt.scatter(x, y, c=color)
+    plt.savefig(tag_dir+'2d_'+str(idx)+'.png')
+    plt.close()
     return
 
-def main(MAX_GEN=10,TAM_POP=10):
-    run(MAX_GEN,TAM_POP)
-    print('-----done-----')
-    return
+def printSolution(Xfront, Yfront, front) -> None:
+    with open(f"{tag_dir}/solution.txt", 'w+') as f: 
+        f.write(f"[[f1]]\n{','.join([str(i) for i in Xfront])}\n\n")
+        f.write(f"[[f2]]\n{','.join([str(i) for i in Yfront])}\n\n")
+
+        f.write(f"[[Front]]\n")
+        for ind in front:
+            f.write(f"{','.join([str(i) for i in ind])}\n")
+
 
 @timer
-def run(MAX_GEN = 10, TAM_POP = 10, RODADAS = 1):
-    df, N, Cols, res = preparaBD("data/diabetes.csv") 
+def run(pointsFile: str, MAX_GEN = 10, TAM_POP = 10,
+        frac_kmeans_init=[1],frac_kmedoids_init=[1], frac_kruscal_init=[1]):
+    
+    if len(frac_kmeans_init) != len(frac_kmedoids_init) \
+        or len(frac_kmedoids_init) != len(frac_kruscal_init):
+        raise ValueError(f"frac_kmeans_init, frac_kmedoids_init and frac_kruscal_init must have the same size\n{len(frac_kmeans_init)}-{len(frac_kmedoids_init)}-{len(frac_kruscal_init)}")
 
-    indiv.maxNumCluster = 4
-    indiv.numProxPoints = 150
+    df, N, Cols, res = preparaBD(pointsFile) 
+
     indiv.size = N
 
+    prtAsw = False
+    drwGph = False
+
     matriz3D = []
-    for _ in range(RODADAS):
-        pontos_function1, pontos_function2, paretoFront = geneticoMultiobjetivo2(df, MAX_GEN, Cols, TAM_POP)
-        matriz3D.append([pontos_function1, pontos_function2])
-    imprimeRodadas(matriz3D)
-    printHeatMap(res.values.tolist(), paretoFront)
-    for idx in range(len(paretoFront)):
-        desenhaGrafos(paretoFront[idx], N, res.values.tolist(), idx)
+    fronts = []
+    rounds = [frac_kruscal_init, frac_kmeans_init, frac_kmedoids_init]
+    rounds = [[rounds[j][i] for j in range(len(rounds))] for i in range(len(rounds[0]))]
+    for current in rounds:
+        frac = TAM_POP/sum(current)
+        nome_rodada = f"{(frac*current[0]):.2f}%kruscal-{(frac*current[1]):.2f}%KMeans-{(frac*current[2]):.2f}%Kmedoid"
+        pontos_function1, pontos_function2, paretoFront = geneticoMultiobjetivo2(df, MAX_GEN, Cols, TAM_POP, current[0], current[1], current[2])
+        matriz3D.append([pontos_function1, pontos_function2, nome_rodada])
+        fronts.append(paretoFront)
+    
+    if prtAsw:
+        printSolution(pontos_function1,pontos_function2,paretoFront)
+
+    imprimeRodadas(matriz3D, pointsFile)
+    printHeatMap(res.values.tolist(), fronts)
+
+    # if drwGph:
+    #     imprimeRodadas(matriz3D)
+    #     printHeatMap(res.values.tolist(), paretoFront)
+    #     for idx in range(len(paretoFront)):
+    #         # desenhaGrafos(paretoFront[idx], N, res.values.tolist(), idx)
+    #         desenhagrafo2d(paretoFront[idx], N, df.values.tolist(), idx)
     return
 
 def setupDir():
@@ -431,13 +349,21 @@ def setupDir():
     tag_dir = 'data/out/'+tag+'/'
     Path(tag_dir).mkdir(parents=True, exist_ok=True)
 
+
+def main(data: str, MAX_GEN=1,TAM_POP=10,
+        frac_kmeans_init=[1],frac_kmedoids_init=[1], frac_kruscal_init=[1]):
+    
+    indiv.maxNumCluster = 4
+    indiv.numProxPoints = 25
+    indiv.crossoverCuts = 2
+    
+    run(data, MAX_GEN, TAM_POP,
+        frac_kmeans_init, frac_kmedoids_init, frac_kruscal_init)
+    print('-----done-----')
+    return
 # 
 # --------------------
 tag_dir = ''
 setupDir()
 if __name__ == "__main__":
-    do_profiling = False
-    if do_profiling:
-        setupProfiler()
-    else:
-        main(MAX_GEN=100,TAM_POP=100)
+    main(data="data/long1.csv")

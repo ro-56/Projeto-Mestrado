@@ -1,97 +1,56 @@
-import copy
-import random
 import numpy as np
 
-class indiv:
-    maxNumCluster:int
-    size: int
-    numProxPoints: int
-    crossoverCuts: int = 5
-
-    def __init__(self, data:list[int]):
-        self.resetFitness()
-        self.data = data
-
-    def resetFitness(self):
-        self.fitness01 = 0
-        self.fitness02 = 0
-    
-    def getCentroids(self, numAttributes:int, dfValues):
-        centroidList = [[0 for _ in range(numAttributes)] for _ in range(self.maxNumCluster)]
-        pointsInCluster = []
-        for idxCluster in range(self.maxNumCluster):
-            pointsIdxInCluster = [i for i, point in enumerate(self.data) if point == idxCluster]
-            pointsInCluster.append(pointsIdxInCluster)
-            for idxAttr in range(numAttributes):
-                centroidList[idxCluster][idxAttr] = getAverageValue([dfValues[pointIdx][idxAttr] for pointIdx in pointsIdxInCluster])
-        return centroidList, pointsInCluster 
-
-    def updateFitness01(self, numAttributes:int, dfValues):
-        centroidList, pointsIdxInCluster = self.getCentroids(numAttributes, dfValues)
-        pointsInCluster = [[dfValues[idxPoint] for idxPoint in pointsIdxInCluster[idxCluster]] for idxCluster in range(self.maxNumCluster)]
-        finalsum = 0
-        for idxCluster in range(self.maxNumCluster):
-            if not pointsInCluster[idxCluster]:
-                continue
-            finalsum += np.linalg.norm(centroidList[idxCluster] - np.array(pointsInCluster[idxCluster])) 
-        self.fitness01 = finalsum
-
-    def updateFitness02(self, neighborMatrix):
-        totalSum = 0
-        for idxData in range(self.size):
-            for idxNearPoint in range(1,self.numProxPoints + 1):
-                if self.data[neighborMatrix[idxData][idxNearPoint]] == self.data[idxData]:
-                    continue
-                totalSum += 1/float(idxNearPoint+1)
-        self.fitness02 = totalSum
-
-    def updateAllFitness(self, neighborMatrix, numAttributes:int, dfValues):
-        self.updateFitness01(numAttributes, dfValues)
-        self.updateFitness02(neighborMatrix)
-    
-    def mutation01(self):
-        return
-
-    def mutation02(self, neighborMatrix):
-        randMutationPoint = random.randint(0,self.size-1)
-        for idx in range(self.size):
-            if self.data[randMutationPoint] != self.data[neighborMatrix[randMutationPoint][idx]]:
-                self.data[randMutationPoint] = self.data[neighborMatrix[randMutationPoint][idx]]
-                break
-    
-    def mutate(self, neighborMatrix):
-        if (random.random() < 0.5):
-            self.mutation01()
-        else:
-            self.mutation02(neighborMatrix)
-        self.resetFitness()
+from misc import get_centroid
 
 
-class population:
-    def __init__(self, members = []):
-        if len(members):
-            self.members = members
-        else:
-            self.members = []
+class individual:
 
-    def addMember(self, indiv:indiv):
-        self.members.append(copy.deepcopy(indiv))
+    base_fitness = [0.0, 0.0]
+    neighbors = []
 
-    def mergePopulation(self, otherPop:"population", deepCopy = 0):
-        for indiv in otherPop.members:
-            if deepCopy:
-                self.members.append(copy.deepcopy(indiv))
-            else:
-                self.members.append(indiv)
+    def __init__(self, genotype: list[int], fitness: list[float] = None):
+        if fitness is None:
+            fitness = self.base_fitness[:]
 
-    def getSize(self) -> int:
-        return len(self.members) 
+        self.genotype = genotype
+        self.fitness = fitness
 
-    def updateAllFitness(self, neighborMatrix, numAttributes:int, dfValues):
-        for indiv in self.members:
-            indiv.updateAllFitness(neighborMatrix, numAttributes, dfValues)
+    def reset_fitness(self) -> None:
+        """Limpa a fitness deste objeto"""
+        self.fitness = self.base_fitness[:]
+        return None
 
-def getAverageValue(vector):
-    if not len(vector):
-        return 0
-    return sum(vector) / len(vector)
+
+    def calculate_fitness(self, data_points):
+        """Calcula a fitness deste objeto"""
+        self.fitness[0] = self.__calculate_fitness_compactness(data_points)
+        self.fitness[1] = self.__calculate_fitness_conectivity()
+        return None
+
+    def __calculate_fitness_compactness(self, data_points) -> float:
+        """
+        Calcula a fitness de um indivíduo
+        """
+        fitness = 0.0
+
+        clusters = np.unique(self.genotype)
+        for i, val in enumerate(clusters):
+            cluster_points = [data_points[j] for j, point in enumerate(self.genotype) if point == val]
+            centroids = get_centroid(cluster_points)
+            fitness += np.linalg.norm(np.array(centroids) - np.array(cluster_points))
+
+        return fitness
+
+
+    def __calculate_fitness_conectivity(self, number_near_points: int = 10) -> float:
+        """
+        Calcula a fitness de um indivíduo
+        """
+        fitness = 0.0
+
+        for i, _ in enumerate(self.genotype):
+            for j in range(1, number_near_points+1):
+                if self.genotype[i] != self.genotype[individual.neighbors[i][j]]:
+                    fitness += 1/float(j+1)
+
+        return fitness

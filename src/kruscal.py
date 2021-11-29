@@ -1,49 +1,78 @@
-from classes import indiv
+from classes import individual
+import math
 
-class edge():
-    fromNode: int
-    toNode: int
-    dist: float
 
-    def __init__(self, fromNode: int, toNode: int, dist: float ):
-        self.fromNode = fromNode
-        self.toNode = toNode
-        self.dist = dist
-
-def kruscalGenIndiv(distMatrix, Cmin: int, Cmax: int):
-    edge_list = makeListFromDistMatrix(distMatrix)
+def make_population_with_kruscal_trees(data_points, min_number_clusters: int, max_number_clusters: int) -> list[individual]:
+    edge_list = __get_edge_list(data_points)
     edge_list.sort(key=lambda x: x.dist, reverse=False)
 
-    roots = list(range(len(distMatrix)))
-    numTrees = len(distMatrix)
+    roots = list(range(len(data_points)))
+    num_existing_trees = len(data_points)
 
-    ret = []
+    list_of_trees = []
 
-    while numTrees > Cmin:
+    while num_existing_trees > min_number_clusters:
         currentEdge = edge_list.pop(0)
 
         if (roots[currentEdge.fromNode] == roots[currentEdge.toNode]):
             continue
-        
+
         for i in range(len(roots)):
             if roots[i] == max(roots[currentEdge.fromNode], roots[currentEdge.toNode]):
                 roots[i] = min(roots[currentEdge.fromNode], roots[currentEdge.toNode])
 
-        numTrees -= 1
-        
-        if numTrees <= Cmax:
-            ret.append(indiv(roots))
+        num_existing_trees -= 1
 
-    return ret
+        if num_existing_trees <= max_number_clusters:
+            list_of_trees.append(individual(roots))
+
+    return list_of_trees
 
 
-def makeListFromDistMatrix(distMatrix: list[list[float]]) -> list[edge]:
-    ret = []
+class __edge():
+    fromNode: int
+    toNode: int
+    dist: float
 
-    for i in range(len(distMatrix)):
-        for j in range(len(distMatrix)):
+    def __init__(self, fromNode: int, toNode: int, dist: float):
+        self.fromNode = fromNode
+        self.toNode = toNode
+        self.dist = dist
+
+
+def __get_edge_list(data_points) -> list[__edge]:
+    edge_list = []
+
+    dist_matrix = __get_distance_matrix(data_points)
+
+    for i in range(len(dist_matrix)):
+        for j in range(len(dist_matrix)):
             if (j <= i):
                 continue
-            ret.append(edge(i, j, distMatrix[i][j]))
+            edge_list.append(__edge(i, j, dist_matrix[i][j]))
 
-    return ret
+    return edge_list
+
+
+def __get_distance_matrix(points, dist = ""):
+    validDistances = {""}
+    if dist not in validDistances:
+        raise ValueError("results: status must be one of %r." % validDistances)
+    
+    dist = [[0 for _ in range(len(points))] for _ in range(len(points))]
+
+    for i in range(len(points)):
+        for j in range(len(points)):
+            if (i == j):
+                dist[i][j] = 0
+                continue
+            if (j < i):
+                continue
+            d = 0.0
+            for k in range(len(points[0])):
+                d += (points[i][k] - points[j][k])**2
+            d = math.sqrt(d)
+            dist[i][j] = d
+            dist[j][i] = d
+
+    return dist

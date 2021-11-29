@@ -1,37 +1,40 @@
-from time import time
+import pandas as pd
+import numpy as np
+from sklearn.neighbors import NearestNeighbors
 
-def progressBar(iterable, prefix = '', suffix = '', decimals = 1, length = 50, fill = '█', printEnd = "\r"):
-    """
-    Call in a loop to create terminal progress bar
-    @params:
-        iteration   - Required  : current iteration (Int)
-        total       - Required  : total iterations (Int)
-        prefix      - Optional  : prefix string (Str)
-        suffix      - Optional  : suffix string (Str)
-        decimals    - Optional  : positive number of decimals in percent complete (Int)
-        length      - Optional  : character length of bar (Int)
-        fill        - Optional  : bar fill character (Str)
-        printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
-    """
-    total = len(iterable)
-    def printProgressBar (iteration):
-        percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
-        filledLength = int(length * iteration // total)
-        bar = fill * filledLength + '-' * (length - filledLength)
-        print(f'\r{prefix} |{bar}| {percent}% {suffix}', end = printEnd)
-    printProgressBar(0)
-    for i, item in enumerate(iterable):
-        yield item
-        printProgressBar(i + 1)
-    print()
+def import_data(filename: str):
+    with open(filename, 'r') as file:
+        df = pd.read_csv(file)
+        Cols = len(df.columns)
+        df2 = df.iloc[:,0:Cols-1]
+        df3 = df.iloc[:,Cols-1:Cols]
+    return df2, df3
 
-# decorators
-# -------------------
-def timer(func):
-    def wrapper(*args, **kwargs):
-        startTime = time()
-        ret = func(*args, **kwargs)
-        delta = time() - startTime
-        print(func.__name__, "elapsed time: ", delta)
-        return ret
-    return wrapper
+def get_neighbors(data_points):
+    neigh = NearestNeighbors(n_neighbors=len(data_points))
+    neigh.fit(data_points)
+    return neigh.kneighbors(data_points, return_distance=False)
+
+# def get_centroids(clusters, data_points):
+#     centroid_list = [[0 for _ in range(len(data_points))] for _ in range(len(data_points[0]))]
+#     points_in_cluster = []
+#     for idxCluster in range(max(clusters)):
+#         pointsIdxInCluster = [i for i, point in enumerate(clusters) if point == idxCluster]
+#         points_in_cluster.append(pointsIdxInCluster)
+#         for idxAttr in range(max(clusters)):
+#             centroid_list[idxCluster][idxAttr] = __get_average_value([data_points[pointIdx][idxAttr] for pointIdx in pointsIdxInCluster])
+#     return centroid_list, points_in_cluster 
+
+# def __get_average_value(vector):
+#     if not len(vector):
+#         return 0
+#     return sum(vector) / len(vector)
+
+def get_centroid(arr):
+    arr = np.array(arr)
+    length = arr.shape[0]
+    centroid = [np.sum(arr[:, i]) for i in range(arr.shape[1])]
+    # sum_x = np.sum(arr[:, 0])
+    # sum_y = np.sum(arr[:, 1])
+    # return sum_x/length, sum_y/length
+    return centroid

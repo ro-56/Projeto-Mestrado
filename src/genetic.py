@@ -1,369 +1,109 @@
-
-import math
-from numpy.core.fromnumeric import size
-import pandas as pd
-import numpy as np
-import networkx as nx
-import matplotlib.pyplot as plt
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.neighbors import NearestNeighbors
-from sklearn.cluster import KMeans
-from sklearn_extra.cluster import KMedoids
-from datetime import datetime
-import time
 from math import floor
-from pathlib import Path
+from random import choices
+import numpy as np
 
-from classes import indiv, population
-from operators import crossover, tournament
-from misc import progressBar, timer
-from kruscal import kruscalGenIndiv
+from classes import individual
+from operators import crossover
+import population_manipulation as pop
+import misc
 import nsgaII
+import graphs
+from animation import plot_animation
 
+def run():
 
-# Auxiliar Functions
-# --------------------
+    # Get Dataset
+    data_dataframe, answers_dataframe = misc.import_data('data/iris.csv')
+    data_points = data_dataframe.values.tolist()
+    answers_values = answers_dataframe.values.tolist()
 
-def preparaBD(arquivo):
-    df = pd.read_csv(arquivo)
-    Cols = len(df.columns)
-    df2 = df.iloc[:,0:Cols-1]
-    df3 = df.iloc[:,Cols-1:Cols]
-    Cols = len(df2.columns)
-    N = len(df2)
-    return df2, N, Cols, df3
+    # Set parameters
+    generation_size = 100
+    population_size = 100
+    initial_population_ratios = {'kruscal': 1, 'kmedoid': 1, 'kmeans': 1}
+    children_by_mutation = 30
+    children_by_crossover = 30
+    children_by_local_search = 10
+    individual.neighbors = misc.get_neighbors(data_points)
 
-def getNeighbors(df):
-    df2 = df.values.tolist()
-    neigh = NearestNeighbors(n_neighbors=len(df))
-    neigh.fit(df2)
-    return neigh.kneighbors(df2, return_distance=False)
+    ##### TESTE #####
+    fronteiras_nas_geracoes = []
+    ######
 
-
-# graphs
-# --------------------
-def imprimeRodadas(matriz3D, title:str):
-    plt.xlabel('f1', fontsize=15)
-    plt.ylabel('f2', fontsize=15)
-    xmin = matriz3D[0][0][0]
-    xmax = matriz3D[0][0][0]
-    ymin = matriz3D[0][1][0]
-    ymax = matriz3D[0][1][0]
-    for fronteira in matriz3D:
-        pontos_function1 = fronteira[0]
-        pontos_function2 = fronteira[1]
-        # para encontrar limites do gráfico
-        if min(pontos_function1) < xmin:
-            xmin = min(pontos_function1)
-        if max(pontos_function1) > xmax:
-            xmax = max(pontos_function1)
-        if min(pontos_function2) < ymin:
-            ymin = min(pontos_function2)
-        if max(pontos_function2) > ymax:
-            ymax = max(pontos_function2)
-        plt.scatter(pontos_function1, pontos_function2, label=fronteira[2])
-    plt.xlim(xmin, xmax)
-    plt.ylim(ymin, ymax)
-    plt.legend(loc="upper right")
-    plt.title(title)
-    plt.savefig(tag_dir+'paretoFront.png')
-    plt.close()
-    return
-
-def desenhaGrafos(lst, N, res, idx=0):
-
-    def isInt(s):
-        try: 
-            int(s)
-            return True
-        except ValueError:
-            return False
-
-    G = nx.Graph() 
-    color_map = []
+    # Initialize population
+    current_population, current_population_ratio = pop.initialize_population(population_size=population_size, population_ratio=initial_population_ratios, data_points=data_points)
     
-    for i in range(N):
-        G.add_edges_from([(i, "C"+str(lst[i]))])
+    pop.update_fitness(current_population, data_points)
 
-    for node in G:
-        if isInt(node):
-            color_map.append(res[node][0]+1)
-            # if res[node][0]:
-            #     color_map.append('red')
-            # else:
-            #     color_map.append('blue')
-        else:
-            color_map.append(0)
-    
-    fig = plt.figure(figsize=(50, 50))
-    nx.draw(G, edge_color='black', with_labels=True, arrows=False,node_color=color_map) 
-    # pylab.show()
-    plt.savefig(tag_dir+'network_'+str(idx)+'.png')
-    plt.close()
-    return
+    # Run generations
+    for g in range(generation_size):
+        # Run generation
+        current_population = run_generation(current_population, children_by_crossover, children_by_mutation, data_points, population_size)
+        ######
+        if g % 10 == 0:
+            fitness_values = [indiv.fitness for indiv in current_population]
+            indices = np.arange(len(current_population))
+            indices_fronteira_nd = nsgaII.encontra_fronteira(fitness_values, indices)
+            fronteiras_nas_geracoes.append([[i] + fitness_values[i] for i in indices_fronteira_nd])
+        ######
+    #  Analyse front
+    fitness_values = [indiv.fitness for indiv in current_population]
+    indices = np.arange(len(current_population))
+    indices_fronteira_nd = nsgaII.encontra_fronteira(fitness_values, indices)
+    populacao_nd = set([list(current_population)[i] for i in indices_fronteira_nd])
+    # populacao_nd = current_population[indices_fronteira_nd, :]
+    # qtde_nd = len(populacao_nd)
+    fitness_nd = [[i] + fitness_values[i] for i in indices_fronteira_nd]
 
-def printHeatMap(res, fronts):
+    fronts = graphs.separa_tres_regioes(fitness_nd)
+    for front in fronts:
+        front_idx = [item[0] for item in front]
+        graphs.heatmap([list(populacao_nd)[i] for i in front_idx], answers_values)
 
-    def sortKey(list):
-        return list[1]
-    
-    for idx, paretoFront in enumerate(fronts):
-        Indvsize = len(paretoFront[0])
-        size = len(paretoFront)
-        mapMatrix = [[0 for _ in range(Indvsize)] for _ in range(Indvsize)]
-        
-        auxMap = [[i, res[i][0]] for i in range(Indvsize) ]
-        auxMap.sort(key=sortKey,reverse=True)
-
-        for i in range(size):
-            for j in [auxMap[idx][0] for idx in range(Indvsize)]:
-                for k in [auxMap[idx][0] for idx in range(Indvsize)]:
-                    if paretoFront[i][j] == paretoFront[i][k]:
-                        mapMatrix[j][k] += 1
-
-        fig, ax = plt.subplots()
-        im = ax.imshow(mapMatrix)
-        # plt.show()
-        plt.savefig(f"{tag_dir}heatmap{idx}.png")
-        plt.close()
-
-def normalize_data(lst):
-    arr = np.asarray(lst)
-    normArr = []
-    for i in range(len(arr[0])):
-        aux = []
-        aux = (arr[:,i] - np.min(arr[:,i])) / (np.max(arr[:,i]) - np.min(arr[:,i]))
-        normArr.append(aux)
-    normArr = np.stack(normArr)
-    return normArr.transpose().tolist()
-
-# 
-# ------------------
-
-def solveKmeans(points, nClusters):
-    X = np.array(points)
-    kmeans = KMeans(n_clusters=nClusters).fit(X)
-    return kmeans.labels_.tolist()
-
-def solveKmedoids(points, nClusters):
-    X = np.array(points)
-    kmeans = KMedoids(n_clusters=nClusters).fit(X)
-    return kmeans.labels_.tolist()
-    
-def getDistanceMatrix(points, dist = ""):
-
-    validDistances = {""}
-    if dist not in validDistances:
-        raise ValueError("results: status must be one of %r." % validDistances)
-    
-    dist = [[0 for _ in range(len(points))] for _ in range(len(points))]
-
-    for i in range(len(points)):
-        for j in range(len(points)):
-            if (i == j):
-                dist[i][j] = 0
-                continue
-            if (j < i):
-                continue
-            d = 0.0
-            for k in range(len(points[0])):
-                d += (points[i][k] - points[j][k])**2
-            d = math.sqrt(d)
-            dist[i][j] = d
-            dist[j][i] = d
-
-    return dist
-
-
-def geneticoMultiobjetivo2(df, MAX_GEN, Cols, TAM_POP, kruscal_size=1, kmeans_size=1, kmedoids_size=1):
-
-    dist = getDistanceMatrix(df.values.tolist())
-
-    pop = population()
-
-    pop_fraction = [kruscal_size, kmeans_size, kmedoids_size]
-    pop_fraction = [floor((pop_fraction[i]/sum(pop_fraction)) * TAM_POP) for i in range(len(pop_fraction))]
-
-    # Parcela Kruscal
-    ind = kruscalGenIndiv(dist, 2, pop_fraction[0])
-    for i in ind:
-        pop.addMember(i)
-
-    # Parcela kmeans
-    numClusters = 2
-    while pop.getSize() < (pop_fraction[0] + pop_fraction[1]):
-        pop.addMember(indiv(solveKmeans(df.values.tolist(), numClusters)))
-        numClusters += 1
-    
-    # Parcela kmedoids
-    numClusters = 2
-    while pop.getSize() < TAM_POP:
-        pop.addMember(indiv(solveKmedoids(df.values.tolist(), numClusters)))
-        numClusters += 1
+    #####
+    plot_animation(fronteiras_nas_geracoes)
+    #####
+    return None
     
 
-    neighborMatrix = getNeighbors(df)
-    dfValues = normalize_data(df.values.tolist())
+def run_generation(current_population: set[individual], children_by_crossover: int, children_by_mutation: int, data_points, population_size: int) -> set[individual]:
+    # Create children
+    crossover_children = get_crossover_children(current_population, children_by_crossover)
+    pop.update_fitness(crossover_children, data_points)
 
-    gens = list(range(MAX_GEN))
-    for _ in progressBar(gens, prefix = 'Progress:', suffix = 'Complete'):
+    mutation_children = get_mutation_children(current_population, children_by_mutation)
+    pop.update_fitness(mutation_children, data_points)
 
-        pop.updateAllFitness(neighborMatrix, Cols, dfValues)
+    mixed_population = set()
+    mixed_population.update(current_population)
+    mixed_population.update(crossover_children)
+    mixed_population.update(mutation_children)
 
-        fit01Values = [pop.members[i].fitness01 for i in range(pop.getSize())]
-        fit02Values = [pop.members[i].fitness02 for i in range(pop.getSize())]
+    fitness_values = [indiv.fitness for indiv in mixed_population]
+    new_population = set(nsgaII.selecao(list(mixed_population), fitness_values, population_size))
 
-        non_dominated_sorted_solution = nsgaII.fast_non_dominated_sort(fit01Values[:],fit02Values[:])
-        crowding_distance_values=[]
-        for i in range(0,len(non_dominated_sorted_solution)):
-            crowding_distance_values.append(nsgaII.crowding_distance(fit01Values[:],fit02Values[:],non_dominated_sorted_solution[i][:]))
-
-        # Create offsprint population
-        popOffspring = population()
-        while(popOffspring.getSize() != pop.getSize()):
-            [idxParent01, idxParent02] = tournament(pop, non_dominated_sorted_solution)
-            offsprint01, offsprint02 = crossover(pop.members[idxParent01],pop.members[idxParent02])
-            offsprint01.mutate(neighborMatrix)
-            offsprint02.mutate(neighborMatrix)
-            popOffspring.addMember(offsprint01)
-            popOffspring.addMember(offsprint02)
-
-        popOffspring.updateAllFitness(neighborMatrix, Cols, dfValues)
-        
-        popMix = population()
-        popMix.mergePopulation(pop)
-        popMix.mergePopulation(popOffspring)
-
-        fit01ValuesMix = [popMix.members[i].fitness01 for i in range(popMix.getSize())]
-        fit02ValuesMix = [popMix.members[i].fitness02 for i in range(popMix.getSize())]
-
-        ## Ajustar... um dia...
-        non_dominated_sorted_solutionMix = nsgaII.fast_non_dominated_sort(fit01ValuesMix[:],fit02ValuesMix[:])
-        crowding_distance_values2=[]
-        for i in range(0,len(non_dominated_sorted_solutionMix)):
-            crowding_distance_values2.append(nsgaII.crowding_distance(fit01ValuesMix[:],fit02ValuesMix[:],non_dominated_sorted_solutionMix[i][:]))
-        new_solution= []
-        for i in range(0,len(non_dominated_sorted_solutionMix)):
-            non_dominated_sorted_solution2_1 = [nsgaII.index_of(non_dominated_sorted_solutionMix[i][j],non_dominated_sorted_solutionMix[i] ) for j in range(0,len(non_dominated_sorted_solutionMix[i]))]
-            front22 = nsgaII.sort_by_values(non_dominated_sorted_solution2_1[:], crowding_distance_values2[i][:])
-            front = [non_dominated_sorted_solutionMix[i][front22[j]] for j in range(0,len(non_dominated_sorted_solutionMix[i]))]
-            front.reverse()
-            for value in front:
-                new_solution.append(value)
-                if(len(new_solution)==TAM_POP):
-                    break
-            if (len(new_solution) == TAM_POP):
-                break
-        
-        pop = population()
-        for idx in new_solution:
-            pop.addMember(popMix.members[idx])
-        del popMix, popOffspring
-    
-    # prepara a fronteira final
-    pop.updateAllFitness(neighborMatrix, Cols, dfValues)
-    fit01Values = [pop.members[i].fitness01 for i in range(pop.getSize())]
-    fit02Values = [pop.members[i].fitness02 for i in range(pop.getSize())]
-    ## Ajustar... um dia...
-    non_dominated_sorted_solution = nsgaII.fast_non_dominated_sort(fit01Values[:],fit02Values[:])
-    pontos_function1 = []
-    pontos_function2 = []
-    for indiceIndiv in non_dominated_sorted_solution[0]:  # somente primeira fronteira
-        pontos_function1.append(fit01Values[indiceIndiv])
-        pontos_function2.append(fit02Values[indiceIndiv])
-    return pontos_function1, pontos_function2, [pop.members[non_dominated_sorted_solution[0][i]].data for i in range(len(non_dominated_sorted_solution[0]))]
-
-# 
-# --------------------
+    return new_population
 
 
-def desenhagrafo2d(lst, N, dfValues, idx):
-    x = []
-    y = []
-    color = []
-
-    for i in range(len(dfValues)):
-        x.append(dfValues[i][0])
-        y.append(dfValues[i][1])
-        color.append(lst[i])
-    plt.scatter(x, y, c=color)
-    plt.savefig(tag_dir+'2d_'+str(idx)+'.png')
-    plt.close()
-    return
-
-def printSolution(Xfront, Yfront, front) -> None:
-    with open(f"{tag_dir}/solution.txt", 'w+') as f: 
-        f.write(f"[[f1]]\n{','.join([str(i) for i in Xfront])}\n\n")
-        f.write(f"[[f2]]\n{','.join([str(i) for i in Yfront])}\n\n")
-
-        f.write(f"[[Front]]\n")
-        for ind in front:
-            f.write(f"{','.join([str(i) for i in ind])}\n")
+def get_mutation_children(current_population: set[individual], number_of_children: int) -> set[individual]:
+    """
+    Cria filhos a partir da mutação de indivíduos aleatórios da população
+    """
+    children_population = []
+    return children_population
 
 
-@timer
-def run(pointsFile: str, MAX_GEN = 10, TAM_POP = 10,
-        frac_kmeans_init=[1],frac_kmedoids_init=[1], frac_kruscal_init=[1]):
-    
-    if len(frac_kmeans_init) != len(frac_kmedoids_init) \
-        or len(frac_kmedoids_init) != len(frac_kruscal_init):
-        raise ValueError(f"frac_kmeans_init, frac_kmedoids_init and frac_kruscal_init must have the same size\n{len(frac_kmeans_init)}-{len(frac_kmedoids_init)}-{len(frac_kruscal_init)}")
-
-    df, N, Cols, res = preparaBD(pointsFile) 
-
-    indiv.size = N
-
-    prtAsw = False
-    drwGph = False
-
-    matriz3D = []
-    fronts = []
-    rounds = [frac_kruscal_init, frac_kmeans_init, frac_kmedoids_init]
-    rounds = [[rounds[j][i] for j in range(len(rounds))] for i in range(len(rounds[0]))]
-    for current in rounds:
-        frac = TAM_POP/sum(current)
-        nome_rodada = f"{(frac*current[0]):.2f}%kruscal-{(frac*current[1]):.2f}%KMeans-{(frac*current[2]):.2f}%Kmedoid"
-        pontos_function1, pontos_function2, paretoFront = geneticoMultiobjetivo2(df, MAX_GEN, Cols, TAM_POP, current[0], current[1], current[2])
-        matriz3D.append([pontos_function1, pontos_function2, nome_rodada])
-        fronts.append(paretoFront)
-    
-    if prtAsw:
-        printSolution(pontos_function1,pontos_function2,paretoFront)
-
-    imprimeRodadas(matriz3D, pointsFile)
-    printHeatMap(res.values.tolist(), fronts)
-
-    # if drwGph:
-    #     imprimeRodadas(matriz3D)
-    #     printHeatMap(res.values.tolist(), paretoFront)
-    #     for idx in range(len(paretoFront)):
-    #         # desenhaGrafos(paretoFront[idx], N, res.values.tolist(), idx)
-    #         desenhagrafo2d(paretoFront[idx], N, df.values.tolist(), idx)
-    return
-
-def setupDir():
-    global tag_dir
-
-    now = datetime.now()
-    tag = now.strftime("%Y%m%d_%H%M%S")
-    tag_dir = 'data/out/'+tag+'/'
-    Path(tag_dir).mkdir(parents=True, exist_ok=True)
+def get_crossover_children(current_population: set[individual], number_of_children: int) -> set[individual]:
+    """
+    Cria filhos a partir do cruzamento de indivíduos aleatórios da população
+    """
+    children_population = set()
+    for _ in range(floor(number_of_children/2)):
+        indiv1, indiv2 = choices(list(current_population), k=2)
+        children = crossover(indiv1, indiv2)
+        children_population.update(children)
+    return children_population
 
 
-def main(data: str, MAX_GEN=1,TAM_POP=10,
-        frac_kmeans_init=[1],frac_kmedoids_init=[1], frac_kruscal_init=[1]):
-    
-    indiv.maxNumCluster = 4
-    indiv.numProxPoints = 25
-    indiv.crossoverCuts = 2
-    
-    run(data, MAX_GEN, TAM_POP,
-        frac_kmeans_init, frac_kmedoids_init, frac_kruscal_init)
-    print('-----done-----')
-    return
-# 
-# --------------------
-tag_dir = ''
-setupDir()
 if __name__ == "__main__":
-    main(data="data/long1.csv")
+    run()

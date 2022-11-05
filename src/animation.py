@@ -1,43 +1,40 @@
-import sys
-import numpy as np
 import matplotlib.pyplot as plt
 import os
 import imageio
 
 def plot_animation(fitness_values):
 
-
-    ind = [val[0] for val in fitness_values[0]]
-    f1 = [val[1] for val in fitness_values[0]]
-    f2 = [val[2] for val in fitness_values[0]]
-
-    minF1 = np.min(f1)
-    iMinF1 = np.argmin(f1)
-    minF2 = np.min(f2)
-    iMinF2 = np.argmin(f2)
-
-    fig, ax = plt.subplots(figsize=(12,8)) 
-
-    # for i in range(len(ind)):
-    #     sc = plt.scatter(f1[i], f2[i], color='b', marker='+')
+    def norm(values):
+        m = max(values)
+        return [val/m for val in values]
 
     filenames = []
+    last_x = []
+    last_y = []
+    first_x = []
+    first_y = []
+    for f, values in enumerate(fitness_values):
+        _ = plt.subplots(figsize=(12,8))
+        f1 = norm([val[1] for val in values])
+        f2 = norm([val[2] for val in values])
+        plt.scatter(f1, f2, color='b', marker='+')
 
-    for f in enumerate(fitness_values):
-        for i in range(len(ind)):
-            sc = plt.scatter(f1[i], f2[i], color='b', marker='+')
+        if f > 0:
+            plt.scatter(last_x, last_y, color='#d3d3d3', marker='+')
+            plt.scatter(first_x, first_y, color='#444444', marker='o')
+        else:
+            first_x = f1
+            first_y = f2
+        last_x = f1
+        last_y = f2
             
-        filename = f'{i}.png'
+        filename = f'{f}.png'
         filenames.append(filename)
         plt.savefig(filename)
         plt.close()
 
-    # with imageio.get_writer('mygif.gif', mode='I') as writer:
-    #     for filename in filenames:
-    #         image = imageio.imread(filename)
-    #         writer.append_data(image)
     images = [imageio.imread(file_path) for file_path in filenames]
-    imageio.mimsave('mygif.gif', images)
+    imageio.mimsave('mygif0.gif', images, fps=4, loop=2)
             
     # Remove files
     for filename in set(filenames):
